@@ -64,54 +64,59 @@ app.get("/", (req, res) => {
   res.send("🚀 Restream System Running FINAL (Improved Viewers)");
 });
 
-
-// ▶️ Start Stream
-app.get("/start", (req, res) => {
-  const id = req.query.id;
-
-  if (!id) return res.send("❌ missing id");
-
+// 🔄 دالة لتشغيل القناة
+function startChannel(id) {
+  if (!id) return false;
+  
   const channel = channels[id];
-  if (!channel) return res.send("❌ channel not found");
+  if (!channel) return false;
 
   if (ffmpegProcesses[id]) {
-    return res.send("⚠️ already running");
+    return true; // بالفعل تعمل
   }
 
   const logo = getLogo(id);
 
   const ffmpeg = spawn("ffmpeg", [
     "-re",
-    "-fflags", "+genpts+discardcorrupt",
+    "-fflags", "+genpts+discardcorrupt+igndts",
     "-flags", "low_delay",
+    "-analyzeduration", "0",
+    "-probesize", "32",
+    "-rtbufsize", "512M",
 
     "-i", channel.input,
     "-i", logo,
 
     "-filter_complex",
-    "[0:v]scale=1280:720,setsar=1[base];[base][1:v]overlay=W-w-5:5",
+    "[0:v]scale=1920:1080:flags=lanczos,setsar=1[base];[base][1:v]overlay=W-w-5:5",
 
-"-c:v", "libx264",
-
-"-preset", "veryfast",
-
-"-tune", "zerolatency",
-
-"-profile:v", "high",
-
-"-b:v", "4500k",
-"-maxrate", "5000k",
-"-bufsize", "10000k",
-
-"-r", "25",
-"-g", "50",
-
-"-c:a", "aac",
-"-b:a", "160k",
-"-ar", "48000",
-
-"-f", "flv",
-channel.output
+    "-c:v", "libx264",
+    "-preset", "veryfast",
+    "-tune", "zerolatency",
+    "-profile:v", "high",
+    "-level", "4.0",
+    
+    // إعدادات البت rate المحسنة لـ 1080p مع استقرار
+    "-b:v", "5000k",
+    "-maxrate", "5500k",
+    "-bufsize", "12000k",
+    
+    "-r", "25",
+    "-g", "50",
+    
+    // إعدادات الـ rate control لتحسين الاستقرار
+    "-rc-lookahead", "30",
+    "-x264-params", "keyint=50:min-keyint=25:scenecut=0",
+    
+    "-c:a", "aac",
+    "-b:a", "160k",
+    "-ar", "48000",
+    
+    // تحسين الـ buffering
+    "-f", "flv",
+    "-flvflags", "no_duration_filesize",
+    channel.output
   ]);
 
   ffmpeg.stderr.on("data", (d) => {
@@ -122,21 +127,27 @@ channel.output
     console.log(`❌ ${id} exited ${code}`);
     delete ffmpegProcesses[id];
 
-    // 🧹 تنظيف العدّاد
+    // تنظيف العدّاد
     viewers[id] = 0;
 
     if (viewerIntervals[id]) {
       clearInterval(viewerIntervals[id]);
       delete viewerIntervals[id];
     }
+
+    // 🔄 إعادة التشغيل التلقائي عند الانقطاع
+    console.log(`🔄 Restarting ${id} automatically...`);
+    setTimeout(() => {
+      startChannel(id);
+    }, 3000); // انتظر 3 ثواني قبل إعادة التشغيل
   });
 
   ffmpegProcesses[id] = ffmpeg;
 
-  // 👁️ init viewers
+  // init viewers
   viewers[id] = Math.floor(Math.random() * 10) + 3;
 
-  // 🔥 حركة مشاهدة واقعية
+  // حركة مشاهدة واقعية
   if (viewerIntervals[id]) clearInterval(viewerIntervals[id]);
 
   viewerIntervals[id] = setInterval(() => {
@@ -147,9 +158,22 @@ channel.output
 
   }, 4000);
 
-  res.send(`✅ Channel ${id} started`);
-});
+  console.log(`✅ Channel ${id} started`);
+  return true;
+}
 
+// ▶️ Start Stream
+app.get("/start", (req, res) => {
+  const id = req.query.id;
+
+  if (!id) return res.send("❌ missing id");
+
+  if (startChannel(id)) {
+    res.send(`✅ Channel ${id} started`);
+  } else {
+    res.send(`❌ Failed to start channel ${id}`);
+  }
+});
 
 // 🛑 Stop Stream
 app.get("/stop", (req, res) => {
@@ -170,7 +194,6 @@ app.get("/stop", (req, res) => {
   res.send(`🛑 Channel ${id} stopped`);
 });
 
-
 // 📊 Status
 app.get("/status", (req, res) => {
   const result = {};
@@ -185,7 +208,6 @@ app.get("/status", (req, res) => {
   res.json(result);
 });
 
-
 // 📡 Dashboard
 app.get("/dashboard", (req, res) => {
   res.send(`
@@ -197,11 +219,14 @@ app.get("/dashboard", (req, res) => {
     body { font-family: Arial; background:#111; color:#fff; padding:20px; }
     .card { background:#222; padding:15px; margin:10px 0; border-radius:10px; }
     button { padding:8px 12px; margin:5px; cursor:pointer; }
+    .status-badge { display:inline-block; padding:3px 10px; border-radius:5px; font-size:12px; }
+    .live { background:#00ff00; color:#000; }
+    .offline { background:#ff0000; color:#fff; }
   </style>
 </head>
 <body>
 
-<h2>📡 Live Dashboard (Improved Viewers)</h2>
+<h2>📡 Live Dashboard (1080p - Auto Restart)</h2>
 
 <div id="list"></div>
 
@@ -217,11 +242,15 @@ async function load() {
   Object.keys(data).forEach(ch => {
     const d = data[ch];
 
+    const statusClass = d.active ? 'live' : 'offline';
+    const statusText = d.active ? '🟢 LIVE' : '🔴 OFFLINE';
+
     box.innerHTML += "<div class='card'>" +
-      "<h3>" + ch + " - " + (d.active ? '🟢 LIVE' : '🔴 OFFLINE') + "</h3>" +
+      "<h3>" + ch + " - <span class='status-badge " + statusClass + "'>" + statusText + "</span></h3>" +
       "<p>👁️ Viewers: " + d.viewers + "</p>" +
-      "<a href='/start?id=" + ch + "'><button style='background:green;color:white;'>Start</button></a>" +
-      "<a href='/stop?id=" + ch + "'><button style='background:red;color:white;'>Stop</button></a>" +
+      "<p style='font-size:12px;color:#888;'>⚡ Quality: 1080p @ 5000kbps</p>" +
+      "<a href='/start?id=" + ch + "'><button style='background:green;color:white;'>▶️ Start</button></a>" +
+      "<a href='/stop?id=" + ch + "'><button style='background:red;color:white;'>⏹️ Stop</button></a>" +
       "</div>";
   });
 }
@@ -236,13 +265,24 @@ setInterval(load, 3000);
   `);
 });
 
-
 // 🚀 Health check
 app.get("/health", (req, res) => {
   res.send("OK");
 });
 
+// 🚀 بدء جميع القنوات تلقائياً عند تشغيل السيرفر
+function startAllChannels() {
+  console.log("🔄 Starting all channels automatically...");
+  Object.keys(channels).forEach(id => {
+    setTimeout(() => {
+      startChannel(id);
+    }, 1000); // تأخير بسيط بين كل قناة
+  });
+}
+
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
   console.log("🚀 Server running on port", port);
+  // بدء جميع القنوات تلقائياً عند تشغيل السيرفر
+  startAllChannels();
 });
