@@ -12,23 +12,23 @@ let viewerIntervals = {};
 // 🎯 القنوات
 const channels = {
   ch1: {
-    input: "http://rgkkw.live/live/akheelasharaf/97430689947/744523.ts",
-    output: "rtmp://rtmp.livepeer.com/live/ecb4-qw51-gpdb-cj86"
+    input: "http://akar13.xyz/live/4750034742512197/3177932697568638/460861.ts",
+    output: "rtmp://rtmp.livepeer.com/live/5516-8c0c-bu72-ead9"
   },
 
   ch2: {
     input: "http://rgkkw.live/live/akheelasharaf/97430689947/744524.ts",
-    output: "rtmp://rtmp.livepeer.com/live/7d57-n258-zcdg-x83m"
+    output: "rtmp://rtmp.livepeer.com/live/5e26-ufcu-ly38-z41b"
   },
 
   ch3: {
     input: "http://rgkkw.live/live/akheelasharaf/97430689947/744525.ts",
-    output: "rtmp://rtmp.livepeer.com/live/2948-k4ao-3qj7-ipxu"
+    output: "rtmp://rtmp.livepeer.com/live/dbd5-z7hw-tkxt-ejwt"
   },
 
   ch4: {
     input: "http://rgkkw.live/live/akheelasharaf/97430689947/744526.ts",
-    output: "rtmp://rtmp.livepeer.com/live/a546-ofhm-g3bd-yl6n"
+    output: "rtmp://rtmp.livepeer.com/live/288c-r9tc-tumq-zpz2"
   },
 
   ch5: {
