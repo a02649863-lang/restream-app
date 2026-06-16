@@ -6,6 +6,7 @@ const app = express();
 let ffmpegProcesses = {};
 let viewers = {};
 let viewerIntervals = {};
+let restartTimeouts = {};
 
 // 🎯 القنوات
 const channels = {
@@ -53,139 +54,160 @@ process.on("unhandledRejection", (err) => {
   console.log("🔥 Rejection:", err);
 });
 
-// 🌐 Home
-app.get("/", (req, res) => {
-  res.send("🚀 Restream System Running - 1080p");
-});
+// 🔄 دالة تشغيل القناة
+function startChannel(id, autoRestart = true) {
+  const channel = channels[id];
+  if (!channel) return false;
 
-// 🔄 دالة لتشغيل القناة
-function startChannel(id) {
-  return new Promise((resolve) => {
-    if (!id) return resolve(false);
-    
-    const channel = channels[id];
-    if (!channel) return resolve(false);
+  // إذا كانت القناة مشغلة بالفعل
+  if (ffmpegProcesses[id]) {
+    return true;
+  }
 
-    if (ffmpegProcesses[id]) {
-      return resolve(true);
+  const logo = getLogo(id);
+
+  console.log(`▶️ بدء تشغيل القناة ${id} ${autoRestart ? '(تلقائي)' : '(يدوي)'}`);
+
+  const ffmpeg = spawn("ffmpeg", [
+    "-re",
+    "-fflags", "+genpts+discardcorrupt",
+    "-flags", "low_delay",
+    "-i", channel.input,
+    "-i", logo,
+    "-filter_complex",
+    "[0:v]scale=1280:720,setsar=1[base];[base][1:v]overlay=W-w-5:5",
+    "-c:v", "libx264",
+    "-preset", "veryfast",
+    "-tune", "zerolatency",
+    "-profile:v", "high",
+    "-b:v", "4500k",
+    "-maxrate", "5000k",
+    "-bufsize", "10000k",
+    "-r", "25",
+    "-g", "50",
+    "-c:a", "aac",
+    "-b:a", "160k",
+    "-ar", "48000",
+    "-f", "flv",
+    channel.output
+  ]);
+
+  ffmpeg.stderr.on("data", (d) => {
+    console.log(`[${id}] ${d.toString()}`);
+  });
+
+  ffmpeg.on("exit", (code) => {
+    console.log(`❌ ${id} توقفت برمز ${code}`);
+    delete ffmpegProcesses[id];
+
+    // تنظيف العدّاد
+    viewers[id] = 0;
+    if (viewerIntervals[id]) {
+      clearInterval(viewerIntervals[id]);
+      delete viewerIntervals[id];
     }
 
-    const logo = getLogo(id);
-
-    console.log(`🎬 Starting ${id} with 1080p quality...`);
-
-    // FFmpeg command مبسط وأكثر استقراراً
-    const ffmpeg = spawn("ffmpeg", [
-      "-re",
-      "-i", channel.input,
-      "-i", logo,
+    // إعادة التشغيل التلقائي
+    if (autoRestart) {
+      console.log(`🔄 محاولة إعادة تشغيل ${id} خلال 5 ثواني...`);
       
-      // فلتر الـ scale والـ overlay
-      "-filter_complex",
-      `[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1[base];[base][1:v]overlay=W-w-5:5`,
-      
-      // ترميز الفيديو
-      "-c:v", "libx264",
-      "-preset", "ultrafast",
-      "-tune", "zerolatency",
-      "-profile:v", "high",
-      "-level", "4.0",
-      
-      // معدل البت للـ 1080p
-      "-b:v", "4000k",
-      "-maxrate", "4500k",
-      "-bufsize", "8000k",
-      
-      // إعدادات الإطارات
-      "-r", "25",
-      "-g", "50",
-      
-      // ترميز الصوت
-      "-c:a", "aac",
-      "-b:a", "128k",
-      "-ar", "44100",
-      
-      // إعدادات إضافية للاستقرار
-      "-f", "flv",
-      "-flvflags", "no_duration_filesize",
-      
-      channel.output
-    ]);
-
-    // تسجيل الأخطاء
-    ffmpeg.stderr.on("data", (data) => {
-      const msg = data.toString();
-      // عرض فقط الأخطاء المهمة
-      if (msg.includes("error") || msg.includes("Error") || msg.includes("Invalid")) {
-        console.log(`[${id}] ⚠️ ${msg}`);
-      }
-    });
-
-    // عند انتهاء العملية
-    ffmpeg.on("exit", (code) => {
-      console.log(`❌ ${id} exited with code ${code}`);
-      delete ffmpegProcesses[id];
-      
-      viewers[id] = 0;
-      if (viewerIntervals[id]) {
-        clearInterval(viewerIntervals[id]);
-        delete viewerIntervals[id];
+      // إلغاء أي تايم أوت سابق
+      if (restartTimeouts[id]) {
+        clearTimeout(restartTimeouts[id]);
+        delete restartTimeouts[id];
       }
 
-      // إعادة التشغيل التلقائي
-      console.log(`🔄 Attempting to restart ${id} in 5 seconds...`);
-      setTimeout(() => {
-        startChannel(id);
+      restartTimeouts[id] = setTimeout(() => {
+        console.log(`🔄 إعادة تشغيل ${id} تلقائياً...`);
+        startChannel(id, true);
+        delete restartTimeouts[id];
       }, 5000);
-    });
-
-    // عند حدوث خطأ
-    ffmpeg.on("error", (err) => {
-      console.log(`[${id}] ❌ Process error:`, err);
-    });
-
-    ffmpegProcesses[id] = ffmpeg;
-
-    // إعداد المشاهدين
-    viewers[id] = Math.floor(Math.random() * 10) + 3;
-    
-    viewerIntervals[id] = setInterval(() => {
-      if (!viewers[id]) return;
-      let change = Math.floor(Math.random() * 3) - 1;
-      viewers[id] = Math.max(1, viewers[id] + change);
-    }, 4000);
-
-    console.log(`✅ ${id} started successfully with 1080p`);
-    resolve(true);
+    }
   });
+
+  ffmpegProcesses[id] = ffmpeg;
+
+  // 👁️ init viewers
+  viewers[id] = Math.floor(Math.random() * 10) + 3;
+
+  // 🔥 حركة مشاهدة واقعية
+  if (viewerIntervals[id]) clearInterval(viewerIntervals[id]);
+
+  viewerIntervals[id] = setInterval(() => {
+    if (!viewers[id]) return;
+    let change = Math.floor(Math.random() * 3) - 1;
+    viewers[id] = Math.max(1, viewers[id] + change);
+  }, 4000);
+
+  return true;
 }
 
-// ▶️ Start Stream
-app.get("/start", async (req, res) => {
-  const id = req.query.id;
-  if (!id) return res.send("❌ missing id");
-  
-  const result = await startChannel(id);
-  res.send(result ? `✅ Channel ${id} started (1080p)` : `❌ Failed to start ${id}`);
-});
-
-// 🛑 Stop Stream
-app.get("/stop", (req, res) => {
-  const id = req.query.id;
-  
+// 🛑 دالة إيقاف القناة
+function stopChannel(id, preventRestart = true) {
   if (ffmpegProcesses[id]) {
-    ffmpegProcesses[id].kill("SIGTERM");
+    ffmpegProcesses[id].kill("SIGKILL");
     delete ffmpegProcesses[id];
   }
-  
+
   viewers[id] = 0;
   if (viewerIntervals[id]) {
     clearInterval(viewerIntervals[id]);
     delete viewerIntervals[id];
   }
-  
-  res.send(`🛑 Channel ${id} stopped`);
+
+  // إلغاء إعادة التشغيل التلقائي
+  if (restartTimeouts[id]) {
+    clearTimeout(restartTimeouts[id]);
+    delete restartTimeouts[id];
+  }
+
+  console.log(`🛑 ${id} تم إيقافها ${preventRestart ? '(لن تعاد تشغيلها تلقائياً)' : ''}`);
+}
+
+// 🌐 Home
+app.get("/", (req, res) => {
+  res.send("🚀 Restream System Running - تشغيل تلقائي للقنوات");
 });
+
+// ▶️ Start Stream (يدوي)
+app.get("/start", (req, res) => {
+  const id = req.query.id;
+  if (!id) return res.send("❌ missing id");
+  if (!channels[id]) return res.send("❌ channel not found");
+
+  // إلغاء أي إعادة تشغيل تلقائي قديمة
+  if (restartTimeouts[id]) {
+    clearTimeout(restartTimeouts[id]);
+    delete restartTimeouts[id];
+  }
+
+  const started = startChannel(id, false); // false = لا تعيد التشغيل تلقائياً إذا توقفت
+  if (started) {
+    res.send(`✅ Channel ${id} started (manual mode - no auto-restart)`);
+  } else {
+    res.send(`❌ Failed to start ${id}`);
+  }
+});
+
+// 🛑 Stop Stream
+app.get("/stop", (req, res) => {
+  const id = req.query.id;
+  if (!id) return res.send("❌ missing id");
+  
+  stopChannel(id, true);
+  res.send(`🛑 Channel ${id} stopped (auto-restart disabled)`);
+});
+
+// 🔄 دالة لتشغيل كل القنوات تلقائياً
+function startAllChannels() {
+  console.log("🚀 بدء تشغيل جميع القنوات تلقائياً...");
+  Object.keys(channels).forEach(id => {
+    // ننتظر قليلاً بين كل قناة والأخرى
+    setTimeout(() => {
+      startChannel(id, true); // true = إعادة تشغيل تلقائي
+    }, parseInt(Object.keys(channels).indexOf(id)) * 2000);
+  });
+}
 
 // 📊 Status
 app.get("/status", (req, res) => {
@@ -194,130 +216,118 @@ app.get("/status", (req, res) => {
     result[id] = {
       active: !!ffmpegProcesses[id],
       viewers: viewers[id] || 0,
-      quality: "1080p"
+      autoRestart: !!restartTimeouts[id]
     };
   }
   res.json(result);
 });
 
-// 📡 Dashboard
+// 📡 Dashboard محسّن
 app.get("/dashboard", (req, res) => {
   res.send(`
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Dashboard 1080p</title>
+  <title>Dashboard - تشغيل تلقائي</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: Arial; background: #0a0a0a; color: #fff; padding: 20px; }
-    .container { max-width: 1200px; margin: 0 auto; }
-    h1 { text-align: center; margin-bottom: 30px; color: #00ff88; }
-    .card { background: #1a1a1a; padding: 20px; margin: 15px 0; border-radius: 12px; border-left: 4px solid #333; }
-    .card.live { border-left-color: #00ff88; }
-    .card.offline { border-left-color: #ff4444; }
-    .header { display: flex; justify-content: space-between; align-items: center; }
-    .channel-name { font-size: 24px; font-weight: bold; }
-    .status { padding: 5px 15px; border-radius: 20px; font-size: 14px; }
-    .status.live { background: #00ff88; color: #000; }
-    .status.offline { background: #ff4444; color: #fff; }
-    .info { margin: 15px 0; color: #888; }
-    .info span { color: #fff; }
-    .buttons { margin-top: 15px; }
-    .btn { padding: 10px 25px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; margin-right: 10px; }
-    .btn-start { background: #00ff88; color: #000; }
-    .btn-start:hover { background: #00cc66; }
-    .btn-stop { background: #ff4444; color: #fff; }
-    .btn-stop:hover { background: #cc0000; }
-    .quality-badge { background: #333; padding: 2px 10px; border-radius: 12px; font-size: 12px; }
+    body { font-family: Arial; background:#111; color:#fff; padding:20px; }
+    .card { background:#222; padding:15px; margin:10px 0; border-radius:10px; }
+    button { padding:8px 12px; margin:5px; cursor:pointer; border:none; border-radius:5px; }
+    .green { background:#2ecc71; color:#fff; }
+    .red { background:#e74c3c; color:#fff; }
+    .blue { background:#3498db; color:#fff; }
+    .info { background:#f39c12; color:#fff; }
+    .auto { background:#9b59b6; color:#fff; }
+    .status-badge { padding:3px 10px; border-radius:15px; font-size:12px; }
+    .live { background:#2ecc71; }
+    .offline { background:#e74c3c; }
+    .restarting { background:#f39c12; }
   </style>
 </head>
 <body>
-<div class="container">
-  <h1>📡 Live Dashboard - 1080p Quality</h1>
-  <div id="list"></div>
-</div>
+
+<h2>📡 Live Dashboard - تشغيل تلقائي</h2>
+<p style="color:#aaa;">✅ جميع القنوات تعمل تلقائياً عند بدء التشغيل وتعيد التشغيل عند التوقف</p>
+
+<div id="list"></div>
 
 <script>
+
 async function load() {
-  try {
-    const res = await fetch('/status');
-    const data = await res.json();
-    const box = document.getElementById('list');
-    box.innerHTML = '';
+  const res = await fetch('/status');
+  const data = await res.json();
 
-    Object.keys(data).forEach(ch => {
-      const d = data[ch];
-      const isLive = d.active;
-      const cardClass = isLive ? 'live' : 'offline';
-      const statusClass = isLive ? 'live' : 'offline';
-      const statusText = isLive ? '🟢 LIVE' : '🔴 OFFLINE';
+  const box = document.getElementById('list');
+  box.innerHTML = '';
 
-      box.innerHTML += \`
-        <div class="card \${cardClass}">
-          <div class="header">
-            <span class="channel-name">📺 \${ch}</span>
-            <span class="status \${statusClass}">\${statusText}</span>
-          </div>
-          <div class="info">
-            👁️ Viewers: <span>\${d.viewers}</span> &nbsp;|&nbsp; 
-            ⚡ Quality: <span class="quality-badge">\${d.quality}</span>
-          </div>
-          <div class="buttons">
-            <button class="btn btn-start" onclick="startChannel('\${ch}')">▶️ Start</button>
-            <button class="btn btn-stop" onclick="stopChannel('\${ch}')">⏹️ Stop</button>
-          </div>
-        </div>
-      \`;
-    });
-  } catch(e) {
-    console.error('Error loading status:', e);
-  }
-}
-
-async function startChannel(id) {
-  const res = await fetch('/start?id=' + id);
-  const text = await res.text();
-  alert(text);
-  load();
-}
-
-async function stopChannel(id) {
-  if (!confirm('Are you sure you want to stop ' + id + '?')) return;
-  const res = await fetch('/stop?id=' + id);
-  const text = await res.text();
-  alert(text);
-  load();
+  Object.keys(data).forEach(ch => {
+    const d = data[ch];
+    const statusClass = d.active ? 'live' : (d.autoRestart ? 'restarting' : 'offline');
+    const statusText = d.active ? '🟢 LIVE' : (d.autoRestart ? '🔄 إعادة تشغيل...' : '🔴 OFFLINE');
+    
+    box.innerHTML += "<div class='card'>" +
+      "<h3>" + ch + 
+      " <span class='status-badge " + statusClass + "'>" + statusText + "</span>" +
+      (d.autoRestart && !d.active ? " <span class='status-badge restarting'>⏳ ستعاد تشغيلها</span>" : "") +
+      "</h3>" +
+      "<p>👁️ المشاهدين: " + d.viewers + "</p>" +
+      "<p style='font-size:12px;color:#aaa;'>" + 
+      (d.active ? '✅ تعمل حالياً' : (d.autoRestart ? '⏳ سيتم إعادة التشغيل تلقائياً' : '❌ متوقفة')) +
+      "</p>" +
+      "<a href='/start?id=" + ch + "'><button class='green'>▶️ تشغيل (يدوي)</button></a>" +
+      "<a href='/stop?id=" + ch + "'><button class='red'>⏹ إيقاف</button></a>" +
+      "<a href='/restart-auto?id=" + ch + "'><button class='auto'>🔄 تفعيل إعادة التشغيل</button></a>" +
+      "</div>";
+  });
 }
 
 load();
 setInterval(load, 3000);
+
 </script>
+
 </body>
 </html>
   `);
 });
 
-// 🚀 Health check
-app.get("/health", (req, res) => {
-  res.json({ status: "OK", timestamp: new Date().toISOString() });
+// إضافة مسار لتفعيل إعادة التشغيل التلقائي لقناة معينة
+app.get("/restart-auto", (req, res) => {
+  const id = req.query.id;
+  if (!id) return res.send("❌ missing id");
+  if (!channels[id]) return res.send("❌ channel not found");
+
+  // إلغاء أي تايم أوت سابق
+  if (restartTimeouts[id]) {
+    clearTimeout(restartTimeouts[id]);
+    delete restartTimeouts[id];
+  }
+
+  // إذا كانت القناة متوقفة، نشغلها مع إعادة تشغيل تلقائي
+  if (!ffmpegProcesses[id]) {
+    startChannel(id, true);
+    res.send(`✅ ${id} تم تفعيل إعادة التشغيل التلقائي وبدء التشغيل`);
+  } else {
+    // إذا كانت تعمل، نعدل الإعدادات لتسمح بإعادة التشغيل عند التوقف
+    // نوقفها ونشغلها مرة أخرى مع إعادة التشغيل التلقائي
+    stopChannel(id, false);
+    setTimeout(() => {
+      startChannel(id, true);
+    }, 1000);
+    res.send(`✅ ${id} تم تفعيل إعادة التشغيل التلقائي`);
+  }
 });
 
-// 🚀 بدء جميع القنوات تلقائياً
-async function startAllChannels() {
-  console.log("🔄 Starting all channels automatically...");
-  for (const id of Object.keys(channels)) {
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    await startChannel(id);
-  }
-}
+// 🚀 Health check
+app.get("/health", (req, res) => {
+  res.send("OK");
+});
 
+// 🚀 بدء التشغيل
 const port = process.env.PORT || 3000;
-app.listen(port, async () => {
-  console.log(`🚀 Server running on port ${port}`);
-  console.log(`📊 Dashboard: http://localhost:${port}/dashboard`);
+app.listen(port, () => {
+  console.log("🚀 Server running on port", port);
   
-  // بدء القنوات تلقائياً
-  setTimeout(() => {
-    startAllChannels();
-  }, 3000);
+  // 🎯 بدء تشغيل جميع القنوات تلقائياً
+  setTimeout(startAllChannels, 3000);
 });
