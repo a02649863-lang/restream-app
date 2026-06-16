@@ -37,7 +37,7 @@ const channels = {
 
   ch5: {
     input: "http://palestine.vibertv.cyou/post5/index.m3u8",
-    output: "rtmp://rtmp.livepeer.com/live/a4be-dmef-x7d9-4kme"
+    output: "rtmp://rtmp.livepeer.com/live/2d30-fvmv-j7ga-a9ub"
   }
 };
 
