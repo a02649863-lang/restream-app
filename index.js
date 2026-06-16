@@ -12,7 +12,7 @@ let viewerIntervals = {};
 // 🎯 القنوات
 const channels = {
   ch1: {
-    input: "http://akar13.xyz/live/4750034742512197/3177932697568638/460861.ts",
+    input: "http://rgkkw.live/live/akheelasharaf/97430689947/744523.ts",
     output: "rtmp://rtmp.livepeer.com/live/5516-8c0c-bu72-ead9"
   },
 
