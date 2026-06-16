@@ -16,7 +16,7 @@ let restartCheckInterval = null;
 // 🎯 القنوات
 const channels = {
   ch1: {
-    input: "http://rgkkw.live/live/akheelasharaf/97430689947/744523.ts",
+    input: "http://palestine.vibertv.cyou/post1/index.m3u8",
     output: "rtmp://rtmp.livepeer.com/live/5516-8c0c-bu72-ead9"
   },
 
