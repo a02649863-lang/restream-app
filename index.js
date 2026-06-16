@@ -21,22 +21,22 @@ const channels = {
   },
 
   ch2: {
-    input: "http://rgkkw.live/live/akheelasharaf/97430689947/744524.ts",
+    input: "http://palestine.vibertv.cyou/post2/index.m3u8",
     output: "rtmp://rtmp.livepeer.com/live/5e26-ufcu-ly38-z41b"
   },
 
   ch3: {
-    input: "http://rgkkw.live/live/akheelasharaf/97430689947/744525.ts",
+    input: "http://palestine.vibertv.cyou/post3/index.m3u8",
     output: "rtmp://rtmp.livepeer.com/live/dbd5-z7hw-tkxt-ejwt"
   },
 
   ch4: {
-    input: "http://rgkkw.live/live/akheelasharaf/97430689947/744526.ts",
+    input: "http://palestine.vibertv.cyou/post4/index.m3u8",
     output: "rtmp://rtmp.livepeer.com/live/288c-r9tc-tumq-zpz2"
   },
 
   ch5: {
-    input: "http://185.160.192.14/live/171348492752/5S6HGsea3j/255225.m3u8",
+    input: "http://palestine.vibertv.cyou/post5/index.m3u8",
     output: "rtmp://rtmp.livepeer.com/live/a4be-dmef-x7d9-4kme"
   }
 };
